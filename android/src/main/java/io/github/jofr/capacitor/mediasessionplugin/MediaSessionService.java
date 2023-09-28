@@ -26,6 +26,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import static java.util.Objects.isNull;
+
 
 public class MediaSessionService extends Service {
     private static final String TAG = "MediaSessionService";
@@ -220,74 +222,75 @@ public class MediaSessionService extends Service {
     @SuppressLint("RestrictedApi")
     public void update() {
         if (possibleActionsUpdate) {
-            notificationBuilder.mActions.clear();
+                    if (!isNull(notificationBuilder)) {
+                      notificationBuilder.mActions.clear();
+                      long activePlaybackStateActions = 0;
+                      int[] activeCompactViewActionIndices = new int[3];
 
-            long activePlaybackStateActions = 0;
-            int[] activeCompactViewActionIndices = new int[3];
+                      int notificationActionIndex = 0;
+                      int compactNotificationActionIndicesIndex = 0;
+                      for (String actionName : possibleActions) {
+                        if (plugin.hasActionHandler(actionName)) {
+                          if (actionName.equals("play") && playbackState != PlaybackStateCompat.STATE_PAUSED) {
+                            continue;
+                          }
+                          if (actionName.equals("pause") && playbackState != PlaybackStateCompat.STATE_PLAYING) {
+                            continue;
+                          }
 
-            int notificationActionIndex = 0;
-            int compactNotificationActionIndicesIndex = 0;
-            for (String actionName : possibleActions) {
-                if (plugin.hasActionHandler(actionName)) {
-                    if (actionName.equals("play") && playbackState != PlaybackStateCompat.STATE_PAUSED) {
-                        continue;
-                    }
-                    if (actionName.equals("pause") && playbackState != PlaybackStateCompat.STATE_PLAYING) {
-                        continue;
-                    }
+                          if (playbackStateActions.containsKey(actionName)) {
+                            activePlaybackStateActions = activePlaybackStateActions | playbackStateActions.get(actionName);
+                          }
 
-                    if (playbackStateActions.containsKey(actionName)) {
-                        activePlaybackStateActions = activePlaybackStateActions | playbackStateActions.get(actionName);
-                    }
-
-                    if (notificationActions.containsKey(actionName)) {
-                        notificationBuilder.addAction(notificationActions.get(actionName));
-                        if (possibleCompactViewActions.contains(actionName) && compactNotificationActionIndicesIndex < 3) {
-                            activeCompactViewActionIndices[compactNotificationActionIndicesIndex] = notificationActionIndex;
-                            compactNotificationActionIndicesIndex++;
+                          if (notificationActions.containsKey(actionName)) {
+                            notificationBuilder.addAction(notificationActions.get(actionName));
+                            if (possibleCompactViewActions.contains(actionName) && compactNotificationActionIndicesIndex < 3) {
+                              activeCompactViewActionIndices[compactNotificationActionIndicesIndex] = notificationActionIndex;
+                              compactNotificationActionIndicesIndex++;
+                            }
+                            notificationActionIndex++;
+                          }
                         }
-                        notificationActionIndex++;
+                      }
+
+                      playbackStateBuilder.setActions(activePlaybackStateActions);
+                      if (compactNotificationActionIndicesIndex > 0) {
+                        notificationStyle.setShowActionsInCompactView(Arrays.copyOfRange(activeCompactViewActionIndices, 0, compactNotificationActionIndicesIndex));
+                      } else {
+                        notificationStyle.setShowActionsInCompactView();
+                      }
+
+                      possibleActionsUpdate = false;
+                      playbackStateUpdate = true;
+                      notificationUpdate = true;
                     }
                 }
-            }
 
-            playbackStateBuilder.setActions(activePlaybackStateActions);
-            if (compactNotificationActionIndicesIndex > 0) {
-                notificationStyle.setShowActionsInCompactView(Arrays.copyOfRange(activeCompactViewActionIndices, 0, compactNotificationActionIndicesIndex));
-            } else {
-                notificationStyle.setShowActionsInCompactView();
-            }
+                if (playbackStateUpdate && !isNull(playbackStateBuilder)) {
+                    playbackStateBuilder.setState(this.playbackState, this.position, this.playbackSpeed);
+                    mediaSession.setPlaybackState(playbackStateBuilder.build());
+                    playbackStateUpdate = false;
+                }
 
-            possibleActionsUpdate = false;
-            playbackStateUpdate = true;
-            notificationUpdate = true;
-        }
+                if (mediaMetadataUpdate && !isNull(mediaMetadataBuilder)) {
+                    mediaMetadataBuilder
+                            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+                            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
+                            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
+                    mediaSession.setMetadata(mediaMetadataBuilder.build());
+                    mediaMetadataUpdate = false;
+                }
 
-        if (playbackStateUpdate) {
-            playbackStateBuilder.setState(this.playbackState, this.position, this.playbackSpeed);
-            mediaSession.setPlaybackState(playbackStateBuilder.build());
-            playbackStateUpdate = false;
-        }
-
-        if (mediaMetadataUpdate) {
-            mediaMetadataBuilder
-                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-                    .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-                    .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
-                    .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
-                    .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
-            mediaSession.setMetadata(mediaMetadataBuilder.build());
-            mediaMetadataUpdate = false;
-        }
-
-        if (notificationUpdate) {
-            notificationBuilder
-                    .setContentTitle(title)
-                    .setContentText(artist + " - " + album)
-                    .setLargeIcon(artwork);
-            notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build());
-            notificationUpdate = false;
-        }
+                if (notificationUpdate && !isNull(notificationBuilder)) {
+                    notificationBuilder
+                            .setContentTitle(title)
+                            .setContentText(artist + " - " + album)
+                            .setLargeIcon(artwork);
+                    notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build());
+                    notificationUpdate = false;
+                }
     }
 
     public void updatePossibleActions() {
